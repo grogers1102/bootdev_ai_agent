@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 from dotenv import load_dotenv
 from openai import OpenAI
 import argparse
@@ -25,30 +26,39 @@ messages = [
     {"role": "system", "content": system_prompt},
     {"role": "user", "content": args.user_prompt},
 ]
-response = client.chat.completions.create(
-    model="openrouter/free",
-    messages=messages,
-    tools=available_functions,
-    temperature=0,
-)
 def main():
-    if response.usage == None:
-        raise RuntimeError("Error: The response's usage property wasn't created")
-    if args.verbose == True:
-        print(f"User prompt: {args.user_prompt}")
-        print(f"Prompt tokens: {response.usage.prompt_tokens}")
-        print(f"Response tokens: {response.usage.completion_tokens}")
-    message = response.choices[0].message
-    print(f"Response: \n{message.content}")
+    for _ in range(20):
+        response = client.chat.completions.create(
+            model="openrouter/free",
+            messages=messages,
+            tools=available_functions,
+            temperature=0,
+        )
+        if response.usage == None:
+            raise RuntimeError("Error: The response's usage property wasn't created")
+        if args.verbose == True:
+            print(f"User prompt: {args.user_prompt}")
+            print(f"Prompt tokens: {response.usage.prompt_tokens}")
+            print(f"Response tokens: {response.usage.completion_tokens}")
+        message = response.choices[0].message
+        messages.append(message)
+        #print(f"Response: \n{message.content}")
+        if message.tool_calls != None:
+            for tool_call in message.tool_calls:
+                function_args = json.loads(tool_call.function.arguments or "{}")
+                #print(f"Calling function: {tool_call.function.name}({function_args})")
+                result_message = call_function(tool_call, args.verbose)
+                if result_message["content"] == None:
+                    raise Exception(f"Error: Content was empty in the tool message")
+                messages.append(result_message)
+                if args.verbose == True:
+                    print(f"-> {result_message['content']}") 
+        else:
+            break
     if message.tool_calls != None:
-        for tool_call in message.tool_calls:
-            function_args = json.loads(tool_call.function.arguments or "{}")
-            #print(f"Calling function: {tool_call.function.name}({function_args})")
-            result_message = call_function(tool_call, args.verbose)
-            if result_message["content"] == None:
-                raise Exception(f"Error: Content was empty in the tool message")
-            if args.verbose == True:
-               print(f"-> {result_message['content']}") 
+        print("AI agent has reached maximum iterations before it could properly answer prompt.")
+        sys.exit(1)
+    print(f"Response: \n{message.content}")
 
 
 if __name__ == "__main__":
